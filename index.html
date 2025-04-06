@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Web Theremin Prototype</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      margin-top: 100px;
+    }
+    button {
+      font-size: 24px;
+      padding: 15px 30px;
+      margin: 20px;
+    }
+    #freqDisplay {
+      font-size: 32px;
+      margin-top: 30px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎶 Мини-Терменвокс</h1>
+  <p>Наклоняй телефон вперёд/назад — меняется высота звука</p>
+  <button onclick="startTheremin()">▶️ Включить</button>
+  <button onclick="stopTheremin()">⏹️ Выключить</button>
+
+  <div id="freqDisplay">Частота: 440 Гц</div>
+
+  <script>
+    let audioCtx, oscillator;
+    const freqDisplay = document.getElementById('freqDisplay');
+
+    function startTheremin() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      oscillator = audioCtx.createOscillator();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // стартовая частота
+
+      oscillator.connect(audioCtx.destination);
+      oscillator.start();
+
+      window.addEventListener('deviceorientation', handleOrientation);
+    }
+
+    function stopTheremin() {
+      if (oscillator) {
+        oscillator.stop();
+        oscillator.disconnect();
+        oscillator = null;
+      }
+      freqDisplay.textContent = "Частота: —";
+      window.removeEventListener('deviceorientation', handleOrientation);
+    }
+
+    function handleOrientation(event) {
+      const beta = event.beta; // наклон вперёд/назад
+      if (!oscillator) return;
+
+      // Преобразуем beta (-180..180) в частоту (100–1200 Гц)
+      let freq = 440 + (beta || 0) * 10;
+      freq = Math.max(100, Math.min(1200, freq));
+
+      oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      freqDisplay.textContent = `Частота: ${freq.toFixed(1)} Гц`;
+    }
+  </script>
+</body>
+</html>
