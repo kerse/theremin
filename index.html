@@ -5,26 +5,34 @@
   <title>Mobile Theremin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body {
-      font-family: 'Helvetica', sans-serif;
+    html, body {
       margin: 0;
       padding: 0;
-      background: #f0f0f0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      height: 100vh;
+      background: #111;
+      color: white;
+      font-family: sans-serif;
+      height: 100%;
       overflow: hidden;
-      user-select: none;
+    }
+
+    #waveCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 30vh;
+      background: #111;
     }
 
     #modeSwitch {
-      margin-top: 10px;
+      margin-top: 32vh;
       width: 90%;
       display: flex;
       justify-content: center;
       gap: 10px;
+      margin-bottom: 20px;
+      margin-left: auto;
+      margin-right: auto;
     }
 
     .modeBtn {
@@ -33,22 +41,22 @@
       font-size: 14px;
       border-radius: 6px;
       border: none;
-      background: #999;
+      background: #555;
       color: white;
     }
 
     .modeBtn.active {
-      background: #333;
+      background: #f90;
     }
 
     #display {
       text-align: center;
-      font-size: 24px;
-      margin: 20px 0 100px 0;
+      font-size: 22px;
+      margin: 0 0 80px 0;
     }
 
     #frequency, #volume {
-      margin: 10px 0;
+      margin: 8px 0;
     }
 
     #controls {
@@ -94,6 +102,8 @@
 </head>
 <body>
 
+  <canvas id="waveCanvas"></canvas>
+
   <div id="modeSwitch">
     <button class="modeBtn active" data-mode="tilt">Tilt Mode</button>
     <button class="modeBtn" data-mode="position">Position Mode</button>
@@ -115,16 +125,28 @@
   </div>
 
   <script>
-    let audioCtx, oscillator, gainNode;
+    let audioCtx, oscillator, gainNode, analyser;
     let isPlaying = false;
     let currentWave = 'sine';
     let mode = 'tilt'; // or 'position'
+    let dataArray, bufferLength;
 
     const powerBtn = document.getElementById('powerBtn');
     const waveButtons = document.getElementById('waveButtons');
     const freqDisplay = document.getElementById('frequency');
     const volDisplay = document.getElementById('volume');
     const modeButtons = document.querySelectorAll('.modeBtn');
+
+    const canvas = document.getElementById('waveCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight * 0.3;
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
 
     modeButtons.forEach(btn => {
       btn.onclick = () => {
@@ -152,12 +174,17 @@
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       oscillator = audioCtx.createOscillator();
       gainNode = audioCtx.createGain();
+      analyser = audioCtx.createAnalyser();
 
       oscillator.type = currentWave;
       oscillator.frequency.value = 440;
       gainNode.gain.value = 0.5;
 
-      oscillator.connect(gainNode).connect(audioCtx.destination);
+      analyser.fftSize = 1024;
+      bufferLength = analyser.fftSize;
+      dataArray = new Uint8Array(bufferLength);
+
+      oscillator.connect(gainNode).connect(analyser).connect(audioCtx.destination);
       oscillator.start();
 
       isPlaying = true;
@@ -167,6 +194,8 @@
 
       window.addEventListener('deviceorientation', handleOrientation);
       window.addEventListener('devicemotion', handleMotion);
+
+      drawWaveform();
     }
 
     function stopTheremin() {
@@ -174,9 +203,11 @@
         oscillator.stop();
         oscillator.disconnect();
         gainNode.disconnect();
+        analyser.disconnect();
       }
       oscillator = null;
       gainNode = null;
+      analyser = null;
       isPlaying = false;
       powerBtn.textContent = 'Start';
       powerBtn.style.background = '#ff5757';
@@ -190,8 +221,8 @@
     function handleOrientation(event) {
       if (!oscillator || !gainNode || mode !== 'tilt') return;
 
-      const beta = event.beta || 0;   // forward/back
-      const gamma = event.gamma || 0; // left/right
+      const beta = event.beta || 0;
+      const gamma = event.gamma || 0;
 
       let freq = 440 + beta * 10;
       freq = Math.max(100, Math.min(1200, freq));
@@ -212,8 +243,7 @@
       const accZ = event.accelerationIncludingGravity.z || 0;
       const accX = event.accelerationIncludingGravity.x || 0;
 
-      // Use Z as vertical component approximation
-      let freq = 440 + (accZ * -80); // invert so "up" = higher
+      let freq = 440 + (accZ * -80);
       freq = Math.max(100, Math.min(1200, freq));
 
       let volume = 0.5 + (accX / 20);
@@ -224,6 +254,34 @@
 
       freqDisplay.textContent = `Frequency: ${freq.toFixed(1)} Hz`;
       volDisplay.textContent = `Volume: ${(volume * 100).toFixed(0)} %`;
+    }
+
+    function drawWaveform() {
+      if (!analyser) return;
+      requestAnimationFrame(drawWaveform);
+
+      analyser.getByteTimeDomainData(dataArray);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#00ff99';
+      ctx.beginPath();
+
+      const sliceWidth = canvas.width / bufferLength;
+      let x = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = v * canvas.height / 2;
+
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+
+        x += sliceWidth;
+      }
+
+      ctx.lineTo(canvas.width, canvas.height / 2);
+      ctx.stroke();
     }
   </script>
 </body>
