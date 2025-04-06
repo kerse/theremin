@@ -13,10 +13,42 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       height: 100vh;
       overflow: hidden;
       user-select: none;
+    }
+
+    #modeSwitch {
+      margin-top: 10px;
+      width: 90%;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .modeBtn {
+      flex: 1;
+      padding: 10px;
+      font-size: 14px;
+      border-radius: 6px;
+      border: none;
+      background: #999;
+      color: white;
+    }
+
+    .modeBtn.active {
+      background: #333;
+    }
+
+    #display {
+      text-align: center;
+      font-size: 24px;
+      margin: 20px 0 100px 0;
+    }
+
+    #frequency, #volume {
+      margin: 10px 0;
     }
 
     #controls {
@@ -58,19 +90,15 @@
       border-radius: 8px;
       box-shadow: 0 2px 5px rgba(0,0,0,0.2);
     }
-
-    #display {
-      text-align: center;
-      font-size: 24px;
-      margin-bottom: 150px;
-    }
-
-    #frequency, #volume {
-      margin: 10px 0;
-    }
   </style>
 </head>
 <body>
+
+  <div id="modeSwitch">
+    <button class="modeBtn active" data-mode="tilt">Tilt Mode</button>
+    <button class="modeBtn" data-mode="position">Position Mode</button>
+  </div>
+
   <div id="display">
     <div id="frequency">Frequency: — Hz</div>
     <div id="volume">Volume: — %</div>
@@ -89,12 +117,24 @@
   <script>
     let audioCtx, oscillator, gainNode;
     let isPlaying = false;
+    let currentWave = 'sine';
+    let mode = 'tilt'; // or 'position'
+
     const powerBtn = document.getElementById('powerBtn');
     const waveButtons = document.getElementById('waveButtons');
     const freqDisplay = document.getElementById('frequency');
     const volDisplay = document.getElementById('volume');
+    const modeButtons = document.querySelectorAll('.modeBtn');
 
-    let currentWave = 'sine';
+    modeButtons.forEach(btn => {
+      btn.onclick = () => {
+        if (btn.classList.contains('active')) return;
+        stopTheremin();
+        modeButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        mode = btn.getAttribute('data-mode');
+      };
+    });
 
     powerBtn.onclick = () => {
       if (!isPlaying) startTheremin();
@@ -126,13 +166,17 @@
       waveButtons.style.display = 'flex';
 
       window.addEventListener('deviceorientation', handleOrientation);
+      window.addEventListener('devicemotion', handleMotion);
     }
 
     function stopTheremin() {
-      oscillator.stop();
-      oscillator.disconnect();
-      gainNode.disconnect();
+      if (oscillator) {
+        oscillator.stop();
+        oscillator.disconnect();
+        gainNode.disconnect();
+      }
       oscillator = null;
+      gainNode = null;
       isPlaying = false;
       powerBtn.textContent = 'Start';
       powerBtn.style.background = '#ff5757';
@@ -140,21 +184,40 @@
       freqDisplay.textContent = 'Frequency: — Hz';
       volDisplay.textContent = 'Volume: — %';
       window.removeEventListener('deviceorientation', handleOrientation);
+      window.removeEventListener('devicemotion', handleMotion);
     }
 
     function handleOrientation(event) {
-      if (!oscillator || !gainNode) return;
+      if (!oscillator || !gainNode || mode !== 'tilt') return;
 
-      const beta = event.beta || 0;  // Front-back tilt for frequency
-      const gamma = event.gamma || 0; // Left-right tilt for volume
+      const beta = event.beta || 0;   // forward/back
+      const gamma = event.gamma || 0; // left/right
 
-      // Frequency: 100Hz - 1200Hz
       let freq = 440 + beta * 10;
-      freq = Math.min(Math.max(freq, 100), 1200);
+      freq = Math.max(100, Math.min(1200, freq));
 
-      // Volume: 0% - 100%
       let volume = 0.5 + (gamma / 180);
-      volume = Math.min(Math.max(volume, 0), 1);
+      volume = Math.max(0, Math.min(1, volume));
+
+      oscillator.frequency.value = freq;
+      gainNode.gain.value = volume;
+
+      freqDisplay.textContent = `Frequency: ${freq.toFixed(1)} Hz`;
+      volDisplay.textContent = `Volume: ${(volume * 100).toFixed(0)} %`;
+    }
+
+    function handleMotion(event) {
+      if (!oscillator || !gainNode || mode !== 'position') return;
+
+      const accZ = event.accelerationIncludingGravity.z || 0;
+      const accX = event.accelerationIncludingGravity.x || 0;
+
+      // Use Z as vertical component approximation
+      let freq = 440 + (accZ * -80); // invert so "up" = higher
+      freq = Math.max(100, Math.min(1200, freq));
+
+      let volume = 0.5 + (accX / 20);
+      volume = Math.max(0, Math.min(1, volume));
 
       oscillator.frequency.value = freq;
       gainNode.gain.value = volume;
