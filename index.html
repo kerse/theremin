@@ -1,73 +1,166 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Web Theremin Prototype</title>
+  <meta charset="UTF-8">
+  <title>Mobile Theremin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body {
-      font-family: sans-serif;
+      font-family: 'Helvetica', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f0f0f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    #controls {
+      position: fixed;
+      bottom: 20px;
+      width: 100%;
+      padding: 0 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #powerBtn {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: #ff5757;
+      color: white;
+      border: none;
+      font-size: 18px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    }
+
+    #waveButtons {
+      display: flex;
+      width: 100%;
+      justify-content: space-between;
+      gap: 5px;
+    }
+
+    .waveBtn {
+      flex: 1;
+      height: 50px;
+      background: #4a90e2;
+      color: white;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+
+    #display {
       text-align: center;
-      margin-top: 100px;
-    }
-    button {
       font-size: 24px;
-      padding: 15px 30px;
-      margin: 20px;
+      margin-bottom: 150px;
     }
-    #freqDisplay {
-      font-size: 32px;
-      margin-top: 30px;
-      color: #333;
+
+    #frequency, #volume {
+      margin: 10px 0;
     }
   </style>
 </head>
 <body>
-  <h1>🎶 Мини-Терменвокс</h1>
-  <p>Наклоняй телефон вперёд/назад — меняется высота звука</p>
-  <button onclick="startTheremin()">▶️ Включить</button>
-  <button onclick="stopTheremin()">⏹️ Выключить</button>
+  <div id="display">
+    <div id="frequency">Frequency: — Hz</div>
+    <div id="volume">Volume: — %</div>
+  </div>
 
-  <div id="freqDisplay">Частота: 440 Гц</div>
+  <div id="controls">
+    <button id="powerBtn">Start</button>
+    <div id="waveButtons" style="display: none;">
+      <button class="waveBtn" data-wave="sine">Sine</button>
+      <button class="waveBtn" data-wave="sawtooth">Saw</button>
+      <button class="waveBtn" data-wave="square">Square</button>
+      <button class="waveBtn" data-wave="triangle">Triangle</button>
+    </div>
+  </div>
 
   <script>
-    let audioCtx, oscillator;
-    const freqDisplay = document.getElementById('freqDisplay');
+    let audioCtx, oscillator, gainNode;
+    let isPlaying = false;
+    const powerBtn = document.getElementById('powerBtn');
+    const waveButtons = document.getElementById('waveButtons');
+    const freqDisplay = document.getElementById('frequency');
+    const volDisplay = document.getElementById('volume');
+
+    let currentWave = 'sine';
+
+    powerBtn.onclick = () => {
+      if (!isPlaying) startTheremin();
+      else stopTheremin();
+    };
+
+    document.querySelectorAll('.waveBtn').forEach(btn => {
+      btn.onclick = () => {
+        currentWave = btn.getAttribute('data-wave');
+        if (oscillator) oscillator.type = currentWave;
+      };
+    });
 
     function startTheremin() {
-      if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      }
-
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       oscillator = audioCtx.createOscillator();
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // стартовая частота
+      gainNode = audioCtx.createGain();
 
-      oscillator.connect(audioCtx.destination);
+      oscillator.type = currentWave;
+      oscillator.frequency.value = 440;
+      gainNode.gain.value = 0.5;
+
+      oscillator.connect(gainNode).connect(audioCtx.destination);
       oscillator.start();
+
+      isPlaying = true;
+      powerBtn.textContent = 'Stop';
+      powerBtn.style.background = '#4caf50';
+      waveButtons.style.display = 'flex';
 
       window.addEventListener('deviceorientation', handleOrientation);
     }
 
     function stopTheremin() {
-      if (oscillator) {
-        oscillator.stop();
-        oscillator.disconnect();
-        oscillator = null;
-      }
-      freqDisplay.textContent = "Частота: —";
+      oscillator.stop();
+      oscillator.disconnect();
+      gainNode.disconnect();
+      oscillator = null;
+      isPlaying = false;
+      powerBtn.textContent = 'Start';
+      powerBtn.style.background = '#ff5757';
+      waveButtons.style.display = 'none';
+      freqDisplay.textContent = 'Frequency: — Hz';
+      volDisplay.textContent = 'Volume: — %';
       window.removeEventListener('deviceorientation', handleOrientation);
     }
 
     function handleOrientation(event) {
-      const beta = event.beta; // наклон вперёд/назад
-      if (!oscillator) return;
+      if (!oscillator || !gainNode) return;
 
-      // Преобразуем beta (-180..180) в частоту (100–1200 Гц)
-      let freq = 440 + (beta || 0) * 10;
-      freq = Math.max(100, Math.min(1200, freq));
+      const beta = event.beta || 0;  // Front-back tilt for frequency
+      const gamma = event.gamma || 0; // Left-right tilt for volume
 
-      oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
-      freqDisplay.textContent = `Частота: ${freq.toFixed(1)} Гц`;
+      // Frequency: 100Hz - 1200Hz
+      let freq = 440 + beta * 10;
+      freq = Math.min(Math.max(freq, 100), 1200);
+
+      // Volume: 0% - 100%
+      let volume = 0.5 + (gamma / 180);
+      volume = Math.min(Math.max(volume, 0), 1);
+
+      oscillator.frequency.value = freq;
+      gainNode.gain.value = volume;
+
+      freqDisplay.textContent = `Frequency: ${freq.toFixed(1)} Hz`;
+      volDisplay.textContent = `Volume: ${(volume * 100).toFixed(0)} %`;
     }
   </script>
 </body>
